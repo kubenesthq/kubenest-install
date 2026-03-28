@@ -21,7 +21,7 @@ GRAFANA="true"
 AUTH_PROVIDER="oidc"
 NAMESPACE="kubenest-system"
 HELM_RELEASE="kubenest"
-HELM_REPO="https://kubenesthq.github.io/kubenest-helm"
+HELM_OCI="oci://ghcr.io/kubenesthq/kubenest"
 K3S_VERSION="v1.31.4+k3s1"
 
 # ---------------------------------------------------------------------------
@@ -335,11 +335,8 @@ if [[ "$VERSION" != "latest" ]]; then
     HELM_ARGS+=(--version "$VERSION")
 fi
 
-# Add Helm repo and deploy
-helm repo add kubenest "$HELM_REPO" 2>/dev/null || true
-helm repo update kubenest
-
-helm upgrade --install "$HELM_RELEASE" kubenest/kubenest \
+# Deploy from OCI registry
+helm upgrade --install "$HELM_RELEASE" "$HELM_OCI" \
     "${HELM_ARGS[@]}" \
     --wait --timeout 300s
 
