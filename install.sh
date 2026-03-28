@@ -17,7 +17,6 @@ VERSION="2.0.0"
 DATA_DIR="/var/lib/kubenest"
 EXTERNAL_DB=""
 EXTERNAL_REDIS=""
-GRAFANA="true"
 AUTH_PROVIDER="oidc"
 NAMESPACE="kubenest-system"
 HELM_RELEASE="kubenest"
@@ -48,8 +47,6 @@ while [[ $# -gt 0 ]]; do
         --data-dir)        DATA_DIR="$2";        shift 2 ;;
         --external-db)     EXTERNAL_DB="$2";     shift 2 ;;
         --external-redis)  EXTERNAL_REDIS="$2";  shift 2 ;;
-        --no-grafana)      GRAFANA="false";      shift   ;;
-        --grafana)         GRAFANA="true";       shift   ;;
         --auth-provider)   AUTH_PROVIDER="$2";   shift 2 ;;
         --help|-h)
             echo "Usage: install.sh --domain <domain> --admin-email <email> [OPTIONS]"
@@ -65,7 +62,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --data-dir        Persistent data directory (default: /var/lib/kubenest)"
             echo "  --external-db     postgres://... (skip bundled PostgreSQL)"
             echo "  --external-redis  redis://... (skip bundled Redis)"
-            echo "  --no-grafana      Skip Grafana deployment"
             echo "  --auth-provider   oidc (default), keycloak, clerk, azuread"
             exit 0
             ;;
@@ -244,38 +240,7 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Install Grafana (optional)
-# ---------------------------------------------------------------------------
-if [[ "$GRAFANA" == "true" ]]; then
-    if helm list -n "$NAMESPACE" 2>/dev/null | grep -q grafana; then
-        ok "Grafana already installed"
-    else
-        info "Installing Grafana..."
-        helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
-        helm repo update grafana
-
-        GRAFANA_ADMIN_PASS=$(generate_secret 12)
-
-        helm upgrade --install grafana grafana/grafana \
-            --namespace "$NAMESPACE" \
-            --set adminPassword="$GRAFANA_ADMIN_PASS" \
-            --set persistence.enabled=true \
-            --set persistence.size=2Gi \
-            --set "ingress.enabled=true" \
-            --set "ingress.ingressClassName=nginx" \
-            --set "ingress.hosts[0]=grafana.${DOMAIN}" \
-            --wait --timeout 120s
-
-        # Store Grafana password in installer secrets
-        kubectl patch secret "$SECRET_NAME" -n "$NAMESPACE" \
-            --type merge -p "{\"stringData\":{\"grafana-password\":\"$GRAFANA_ADMIN_PASS\"}}"
-
-        ok "Grafana installed"
-    fi
-fi
-
-# ---------------------------------------------------------------------------
-# 8. Deploy KubeNest via Helm
+# 7. Deploy KubeNest via Helm
 # ---------------------------------------------------------------------------
 info "Deploying KubeNest stack..."
 
@@ -366,12 +331,6 @@ echo -e "  ${CYAN}Dashboard:${NC}  ${SCHEME}://app.${DOMAIN}"
 echo -e "  ${CYAN}API:${NC}        ${SCHEME}://api.${DOMAIN}"
 echo -e "  ${CYAN}API Docs:${NC}   ${SCHEME}://api.${DOMAIN}/docs"
 echo -e "  ${CYAN}Hub:${NC}        ${WS_SCHEME}://hub.${DOMAIN}"
-
-if [[ "$GRAFANA" == "true" ]]; then
-    GRAFANA_PASS=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.grafana-password}' 2>/dev/null | base64 -d || echo "(check secret)")
-    echo -e "  ${CYAN}Grafana:${NC}    ${SCHEME}://grafana.${DOMAIN}"
-    echo -e "  ${CYAN}Grafana:${NC}    admin / ${GRAFANA_PASS}"
-fi
 
 echo ""
 echo -e "  ${CYAN}Admin Login:${NC}"

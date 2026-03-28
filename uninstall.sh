@@ -44,7 +44,6 @@ echo -e "${RED}============================================================${NC}
 echo ""
 echo "This will remove:"
 echo "  - Helm release: $HELM_RELEASE (namespace: $NAMESPACE)"
-echo "  - Grafana (if installed)"
 echo "  - cert-manager"
 echo "  - ingress-nginx"
 [[ "$REMOVE_K3S" == "true" ]]  && echo "  - k3s"
@@ -61,13 +60,6 @@ if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "$HELM_RELEASE"; then
     info "Removing KubeNest Helm release..."
     helm uninstall "$HELM_RELEASE" -n "$NAMESPACE"
     ok "KubeNest removed"
-fi
-
-# Remove Grafana
-if helm list -n "$NAMESPACE" 2>/dev/null | grep -q grafana; then
-    info "Removing Grafana..."
-    helm uninstall grafana -n "$NAMESPACE"
-    ok "Grafana removed"
 fi
 
 # Remove namespace
