@@ -22,6 +22,8 @@ NAMESPACE="kubenest-system"
 HELM_RELEASE="kubenest"
 HELM_OCI="oci://ghcr.io/kubenesthq/kubenest"
 K3S_VERSION="v1.31.4+k3s1"
+INGRESS_NGINX_VERSION="4.15.1"
+CERT_MANAGER_VERSION="v1.20.1"
 
 # ---------------------------------------------------------------------------
 # Colors / helpers
@@ -183,6 +185,7 @@ else
     helm repo update ingress-nginx
     helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
         --namespace ingress-nginx --create-namespace \
+        --version "$INGRESS_NGINX_VERSION" \
         --set controller.publishService.enabled=true \
         --wait --timeout 120s
     ok "ingress-nginx installed"
@@ -200,6 +203,7 @@ if [[ "$TLS" != "none" ]]; then
         helm repo update jetstack
         helm upgrade --install cert-manager jetstack/cert-manager \
             --namespace cert-manager --create-namespace \
+            --version "$CERT_MANAGER_VERSION" \
             --set crds.enabled=true \
             --wait --timeout 120s
         ok "cert-manager installed"
