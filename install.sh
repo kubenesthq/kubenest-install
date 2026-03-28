@@ -21,7 +21,7 @@ AUTH_PROVIDER="oidc"
 NAMESPACE="kubenest-system"
 HELM_RELEASE="kubenest"
 HELM_OCI="oci://ghcr.io/kubenesthq/kubenest"
-K3S_VERSION="v1.31.4+k3s1"
+K3S_VERSION="v1.35.1+k3s1"
 INGRESS_NGINX_VERSION="4.15.1"
 CERT_MANAGER_VERSION="v1.20.1"
 
