@@ -13,7 +13,7 @@ DOMAIN=""
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 TLS="letsencrypt"
-VERSION="latest"
+VERSION="2.0.0"
 DATA_DIR="/var/lib/kubenest"
 EXTERNAL_DB=""
 EXTERNAL_REDIS=""
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
             echo "Optional:"
             echo "  --admin-password  Admin password (auto-generated if omitted)"
             echo "  --tls             letsencrypt (default), selfsigned, none"
-            echo "  --version         Helm chart version: latest (default), or pinned (v2.0.0)"
+            echo "  --version         Helm chart version (default: 2.0.0)"
             echo "  --data-dir        Persistent data directory (default: /var/lib/kubenest)"
             echo "  --external-db     postgres://... (skip bundled PostgreSQL)"
             echo "  --external-redis  redis://... (skip bundled Redis)"
@@ -143,7 +143,7 @@ ok "Namespace $NAMESPACE ready"
 SECRET_NAME="${HELM_RELEASE}-installer-secrets"
 
 generate_secret() {
-    local key="$1" length="${2:-32}"
+    local length="${1:-32}"
     openssl rand -hex "$length"
 }
 
@@ -163,10 +163,10 @@ if kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" &>/dev/null; then
     PG_PASSWORD=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.pg-password}' | base64 -d)
 else
     info "Generating secrets..."
-    JWT_SECRET=$(generate_secret jwt 32)
+    JWT_SECRET=$(generate_secret 32)
     ENCRYPTION_KEY=$(generate_fernet_key)
-    CALLBACK_SECRET=$(generate_secret callback 32)
-    PG_PASSWORD=$(generate_secret pg 16)
+    CALLBACK_SECRET=$(generate_secret 32)
+    PG_PASSWORD=$(generate_secret 16)
 
     kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" \
         --from-literal=jwt-secret="$JWT_SECRET" \
@@ -254,7 +254,7 @@ if [[ "$GRAFANA" == "true" ]]; then
         helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
         helm repo update grafana
 
-        GRAFANA_ADMIN_PASS=$(generate_secret grafana 12)
+        GRAFANA_ADMIN_PASS=$(generate_secret 12)
 
         helm upgrade --install grafana grafana/grafana \
             --namespace "$NAMESPACE" \
@@ -331,9 +331,7 @@ else
 fi
 
 # Chart version
-if [[ "$VERSION" != "latest" ]]; then
-    HELM_ARGS+=(--version "$VERSION")
-fi
+HELM_ARGS+=(--version "$VERSION")
 
 # Deploy from OCI registry
 helm upgrade --install "$HELM_RELEASE" "$HELM_OCI" \
@@ -358,14 +356,20 @@ echo -e "${GREEN}============================================================${N
 echo -e "${GREEN}  KubeNest Control Plane Installed Successfully!${NC}"
 echo -e "${GREEN}============================================================${NC}"
 echo ""
-echo -e "  ${CYAN}Dashboard:${NC}  https://app.${DOMAIN}"
-echo -e "  ${CYAN}API:${NC}        https://api.${DOMAIN}"
-echo -e "  ${CYAN}API Docs:${NC}   https://api.${DOMAIN}/docs"
-echo -e "  ${CYAN}Hub:${NC}        wss://hub.${DOMAIN}"
+if [[ "$TLS" == "none" ]]; then
+    SCHEME="http"; WS_SCHEME="ws"
+else
+    SCHEME="https"; WS_SCHEME="wss"
+fi
+
+echo -e "  ${CYAN}Dashboard:${NC}  ${SCHEME}://app.${DOMAIN}"
+echo -e "  ${CYAN}API:${NC}        ${SCHEME}://api.${DOMAIN}"
+echo -e "  ${CYAN}API Docs:${NC}   ${SCHEME}://api.${DOMAIN}/docs"
+echo -e "  ${CYAN}Hub:${NC}        ${WS_SCHEME}://hub.${DOMAIN}"
 
 if [[ "$GRAFANA" == "true" ]]; then
     GRAFANA_PASS=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.grafana-password}' 2>/dev/null | base64 -d || echo "(check secret)")
-    echo -e "  ${CYAN}Grafana:${NC}    https://grafana.${DOMAIN}"
+    echo -e "  ${CYAN}Grafana:${NC}    ${SCHEME}://grafana.${DOMAIN}"
     echo -e "  ${CYAN}Grafana:${NC}    admin / ${GRAFANA_PASS}"
 fi
 
@@ -377,10 +381,6 @@ echo ""
 echo -e "  ${CYAN}Namespace:${NC}  ${NAMESPACE}"
 echo -e "  ${CYAN}Data Dir:${NC}   ${DATA_DIR}"
 echo ""
-
-if [[ "$TLS" == "none" ]]; then
-    warn "TLS is disabled. Replace https:// with http:// in URLs above."
-fi
 
 echo -e "  Re-run this script to upgrade. Secrets and data are preserved."
 echo ""
