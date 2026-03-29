@@ -255,6 +255,7 @@ HELM_ARGS=(
     --set "jwtSecret=$JWT_SECRET"
     --set "backend.admin.email=$ADMIN_EMAIL"
     --set "backend.admin.password=$ADMIN_PASSWORD"
+    --set "operator.enabled=false"
 )
 
 # TLS annotations for ingresses
