@@ -353,6 +353,7 @@ HELM_ARGS+=(--version "$VERSION")
 # Deploy from OCI registry
 helm upgrade --install "$HELM_RELEASE" "$HELM_OCI" \
     "${HELM_ARGS[@]}" \
+    --history-max 1 \
     --wait --timeout 300s
 
 ok "KubeNest stack deployed"
