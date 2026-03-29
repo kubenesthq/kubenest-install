@@ -300,6 +300,8 @@ HELM_ARGS=(
     --set "jwtSecret=$JWT_SECRET"
     --set "backend.admin.email=$ADMIN_EMAIL"
     --set "backend.admin.password=$ADMIN_PASSWORD"
+    --set "encryptionKey=$ENCRYPTION_KEY"
+    --set "provisioningCallbackSecret=$CALLBACK_SECRET"
     --set "operator.enabled=false"
 )
 
