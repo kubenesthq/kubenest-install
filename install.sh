@@ -93,9 +93,43 @@ if [[ $EUID -ne 0 ]]; then
     die "This script must be run as root (or with sudo)"
 fi
 
-for cmd in curl openssl; do
-    command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
+for cmd in curl openssl dig; do
+    command -v "$cmd" &>/dev/null || die "Required command not found: $cmd (install with: apt-get install -y dnsutils)"
 done
+
+# ---------------------------------------------------------------------------
+# DNS preflight check (when TLS is enabled)
+# ---------------------------------------------------------------------------
+if [[ "$TLS" != "none" ]]; then
+    info "Checking DNS records..."
+    MY_IP=$(curl -s --max-time 5 https://ifconfig.me || curl -s --max-time 5 https://icanhazip.com || true)
+    DNS_OK=true
+
+    for sub in app api hub; do
+        FQDN="${sub}.${DOMAIN}"
+        RESOLVED_IP=$(dig +short "$FQDN" A 2>/dev/null | tail -1)
+        if [[ -z "$RESOLVED_IP" ]]; then
+            err "DNS not configured: ${FQDN} does not resolve"
+            DNS_OK=false
+        elif [[ -n "$MY_IP" && "$RESOLVED_IP" != "$MY_IP" ]]; then
+            warn "${FQDN} resolves to ${RESOLVED_IP} but this machine is ${MY_IP}"
+            DNS_OK=false
+        else
+            ok "${FQDN} -> ${RESOLVED_IP}"
+        fi
+    done
+
+    if [[ "$DNS_OK" == "false" ]]; then
+        echo ""
+        err "DNS records are not pointing to this machine."
+        err "TLS certificate issuance will fail without correct DNS."
+        err ""
+        err "Either:"
+        err "  1. Set up DNS records and re-run this script"
+        err "  2. Re-run with --tls none to skip TLS for now"
+        die "Aborting due to DNS misconfiguration."
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Install k3s
@@ -159,6 +193,9 @@ if kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" &>/dev/null; then
     ENCRYPTION_KEY=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.encryption-key}' | base64 -d)
     CALLBACK_SECRET=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.callback-secret}' | base64 -d)
     PG_PASSWORD=$(kubectl get secret "$SECRET_NAME" -n "$NAMESPACE" -o jsonpath='{.data.pg-password}' | base64 -d)
+    # Store admin password if not already present
+    kubectl patch secret "$SECRET_NAME" -n "$NAMESPACE" \
+        --type merge -p "{\"stringData\":{\"admin-password\":\"$ADMIN_PASSWORD\"}}" 2>/dev/null || true
 else
     info "Generating secrets..."
     JWT_SECRET=$(generate_secret 32)
@@ -170,7 +207,8 @@ else
         --from-literal=jwt-secret="$JWT_SECRET" \
         --from-literal=encryption-key="$ENCRYPTION_KEY" \
         --from-literal=callback-secret="$CALLBACK_SECRET" \
-        --from-literal=pg-password="$PG_PASSWORD"
+        --from-literal=pg-password="$PG_PASSWORD" \
+        --from-literal=admin-password="$ADMIN_PASSWORD"
     ok "Secrets generated and stored"
 fi
 
@@ -340,7 +378,7 @@ echo -e "  ${CYAN}Hub:${NC}        ${WS_SCHEME}://hub.${DOMAIN}"
 echo ""
 echo -e "  ${CYAN}Admin Login:${NC}"
 echo -e "    Email:    ${ADMIN_EMAIL}"
-echo -e "    Password: ${ADMIN_PASSWORD}"
+echo -e "    Password: kubectl get secret ${SECRET_NAME} -n ${NAMESPACE} -o jsonpath='{.data.admin-password}' | base64 -d"
 echo ""
 echo -e "  ${CYAN}Namespace:${NC}  ${NAMESPACE}"
 echo -e "  ${CYAN}Data Dir:${NC}   ${DATA_DIR}"
