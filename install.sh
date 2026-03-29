@@ -93,42 +93,49 @@ if [[ $EUID -ne 0 ]]; then
     die "This script must be run as root (or with sudo)"
 fi
 
-for cmd in curl openssl dig; do
-    command -v "$cmd" &>/dev/null || die "Required command not found: $cmd (install with: apt-get install -y dnsutils)"
+for cmd in curl openssl; do
+    command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
 done
 
 # ---------------------------------------------------------------------------
-# DNS preflight check (when TLS is enabled)
+# DNS check (informational — does not block installation)
 # ---------------------------------------------------------------------------
-if [[ "$TLS" != "none" ]]; then
-    info "Checking DNS records..."
-    MY_IP=$(curl -s --max-time 5 https://ifconfig.me || curl -s --max-time 5 https://icanhazip.com || true)
-    DNS_OK=true
+info "Detecting public IP..."
+MY_IP=$(curl -s --max-time 5 https://ifconfig.me || curl -s --max-time 5 https://icanhazip.com || true)
+if [[ -n "$MY_IP" ]]; then
+    ok "Public IP: ${MY_IP}"
+else
+    warn "Could not detect public IP"
+fi
 
-    for sub in app api hub; do
-        FQDN="${sub}.${DOMAIN}"
-        RESOLVED_IP=$(dig +short "$FQDN" A 2>/dev/null | tail -1)
-        if [[ -z "$RESOLVED_IP" ]]; then
-            err "DNS not configured: ${FQDN} does not resolve"
-            DNS_OK=false
-        elif [[ -n "$MY_IP" && "$RESOLVED_IP" != "$MY_IP" ]]; then
-            warn "${FQDN} resolves to ${RESOLVED_IP} but this machine is ${MY_IP}"
-            DNS_OK=false
-        else
-            ok "${FQDN} -> ${RESOLVED_IP}"
-        fi
-    done
-
-    if [[ "$DNS_OK" == "false" ]]; then
-        echo ""
-        err "DNS records are not pointing to this machine."
-        err "TLS certificate issuance will fail without correct DNS."
-        err ""
-        err "Either:"
-        err "  1. Set up DNS records and re-run this script"
-        err "  2. Re-run with --tls none to skip TLS for now"
-        die "Aborting due to DNS misconfiguration."
+info "Checking DNS records..."
+DNS_OK=true
+for sub in app api hub; do
+    FQDN="${sub}.${DOMAIN}"
+    RESOLVED_IP=$(dig +short "$FQDN" A 2>/dev/null | tail -1)
+    if [[ -z "$RESOLVED_IP" ]]; then
+        warn "DNS not configured: ${FQDN} does not resolve"
+        DNS_OK=false
+    elif [[ -n "$MY_IP" && "$RESOLVED_IP" != "$MY_IP" ]]; then
+        warn "${FQDN} resolves to ${RESOLVED_IP} but this machine is ${MY_IP}"
+        DNS_OK=false
+    else
+        ok "${FQDN} -> ${RESOLVED_IP}"
     fi
+done
+
+if [[ "$DNS_OK" == "false" ]]; then
+    echo ""
+    warn "DNS records are not yet pointing to this machine."
+    if [[ "$TLS" != "none" ]]; then
+        warn "TLS certificates will issue automatically once DNS propagates."
+        warn "No need to re-run — cert-manager retries in the background."
+    fi
+    warn ""
+    warn "Add these DNS records:"
+    warn "  ${DOMAIN}   -> A    -> ${MY_IP:-<this VM IP>}"
+    warn "  *.${DOMAIN} -> CNAME -> ${DOMAIN}"
+    echo ""
 fi
 
 # ---------------------------------------------------------------------------
