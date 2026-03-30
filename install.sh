@@ -359,6 +359,18 @@ helm upgrade --install "$HELM_RELEASE" "$HELM_OCI" \
 ok "KubeNest stack deployed"
 
 # ---------------------------------------------------------------------------
+# 8b. Restart deployments to pull latest images
+# ---------------------------------------------------------------------------
+info "Restarting deployments to pull latest images..."
+for deploy in backend hub ui operator-v2; do
+    DEPLOY_NAME="${HELM_RELEASE}-${deploy}"
+    if kubectl get deployment "$DEPLOY_NAME" -n "$NAMESPACE" &>/dev/null; then
+        kubectl rollout restart deployment "$DEPLOY_NAME" -n "$NAMESPACE"
+        ok "Restarted $DEPLOY_NAME"
+    fi
+done
+
+# ---------------------------------------------------------------------------
 # 9. Wait for all pods to be ready
 # ---------------------------------------------------------------------------
 info "Waiting for pods to be ready..."
