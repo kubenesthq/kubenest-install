@@ -13,7 +13,7 @@ DOMAIN=""
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 TLS="letsencrypt"
-VERSION="2.0.0"
+VERSION="2.1.0"
 DATA_DIR="/var/lib/kubenest"
 EXTERNAL_DB=""
 EXTERNAL_REDIS=""
@@ -289,6 +289,17 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
+# 6b. Install ArgoCD Application CRD (required by operator even without ArgoCD)
+# ---------------------------------------------------------------------------
+if ! kubectl get crd applications.argoproj.io &>/dev/null; then
+    info "Installing ArgoCD Application CRD..."
+    kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml
+    ok "ArgoCD Application CRD installed"
+else
+    ok "ArgoCD Application CRD already present"
+fi
+
+# ---------------------------------------------------------------------------
 # 7. Deploy KubeNest via Helm
 # ---------------------------------------------------------------------------
 info "Deploying KubeNest stack..."
@@ -302,7 +313,13 @@ HELM_ARGS=(
     --set "backend.admin.password=$ADMIN_PASSWORD"
     --set "encryptionKey=$ENCRYPTION_KEY"
     --set "provisioningCallbackSecret=$CALLBACK_SECRET"
-    --set "operator.enabled=false"
+    --set "operator.enabled=true"
+    --set "operator-chart.kubenest.backendURL=ws://kubenest-hub:8001/ws/operator"
+    --set "operator-chart.kubenest.jwtSecret=$JWT_SECRET"
+    --set "operator-chart.bootstrap.argocd.enabled=false"
+    --set "operator-chart.bootstrap.certManager.enabled=false"
+    --set "operator-chart.bootstrap.ingressNginx.enabled=false"
+    --set "operator-chart.bootstrap.vault.enabled=false"
 )
 
 # TLS annotations for ingresses
@@ -359,10 +376,32 @@ helm upgrade --install "$HELM_RELEASE" "$HELM_OCI" \
 ok "KubeNest stack deployed"
 
 # ---------------------------------------------------------------------------
+# 8. Grant operator cluster-admin RBAC (needed for node listing, CRD management)
+# ---------------------------------------------------------------------------
+OPERATOR_SA="${HELM_RELEASE}-operator-chart"
+if kubectl get serviceaccount "$OPERATOR_SA" -n "$NAMESPACE" &>/dev/null; then
+    kubectl apply -f - <<RBACEOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ${OPERATOR_SA}-cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: ${OPERATOR_SA}
+  namespace: ${NAMESPACE}
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+RBACEOF
+    ok "Operator RBAC configured"
+fi
+
+# ---------------------------------------------------------------------------
 # 8b. Restart deployments to pull latest images
 # ---------------------------------------------------------------------------
 info "Restarting deployments to pull latest images..."
-for deploy in backend hub ui operator-v2; do
+for deploy in backend hub ui operator-chart-controller-manager; do
     DEPLOY_NAME="${HELM_RELEASE}-${deploy}"
     if kubectl get deployment "$DEPLOY_NAME" -n "$NAMESPACE" &>/dev/null; then
         kubectl rollout restart deployment "$DEPLOY_NAME" -n "$NAMESPACE"
