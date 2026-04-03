@@ -288,16 +288,7 @@ EOF
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# 6b. Install ArgoCD Application CRD (required by operator even without ArgoCD)
-# ---------------------------------------------------------------------------
-if ! kubectl get crd applications.argoproj.io &>/dev/null; then
-    info "Installing ArgoCD Application CRD..."
-    kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml
-    ok "ArgoCD Application CRD installed"
-else
-    ok "ArgoCD Application CRD already present"
-fi
+# ArgoCD CRDs are installed by the operator subchart (bootstrap.argocd.enabled=true)
 
 # ---------------------------------------------------------------------------
 # 7. Deploy KubeNest via Helm
@@ -305,6 +296,8 @@ fi
 info "Deploying KubeNest stack..."
 
 # Build Helm values
+GITEA_PASSWORD=$(generate_secret 16)
+
 HELM_ARGS=(
     --namespace "$NAMESPACE"
     --set "domain=$DOMAIN"
@@ -316,7 +309,10 @@ HELM_ARGS=(
     --set "operator.enabled=true"
     --set "operator-chart.kubenest.backendURL=ws://kubenest-hub:8001/ws/operator"
     --set "operator-chart.kubenest.jwtSecret=$JWT_SECRET"
-    --set "operator-chart.bootstrap.argocd.enabled=false"
+    # GitOps: ArgoCD + Gitea for workload deployment
+    --set "operator-chart.bootstrap.argocd.enabled=true"
+    --set "operator-chart.bootstrap.gitea.enabled=true"
+    --set "operator-chart.gitea.gitea.admin.password=$GITEA_PASSWORD"
     --set "operator-chart.bootstrap.certManager.enabled=false"
     --set "operator-chart.bootstrap.ingressNginx.enabled=false"
     --set "operator-chart.bootstrap.vault.enabled=false"
